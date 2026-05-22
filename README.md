@@ -1197,7 +1197,7 @@ Dự án này được xây dựng cho **nghiên cứu & giáo dục**.
 ## 🎓 Tham Khảo Thêm
 
 - **Backtesting Theory**: https://www.investopedia.com/terms/b/backtesting.asp
-- **Technical Analysis**: https://www.investopedia.com/technical-analysis/
+- **Technical Analysis**: https://www.investopedia.com/terms/t/technicalanalysis.asp
 - **Binance API**: https://binance-docs.github.io/apidocs/
 - **Risk Management**: https://en.wikipedia.org/wiki/Risk_management
 - **Walk-Forward Analysis**: https://en.wikipedia.org/wiki/Walk_forward_optimization
