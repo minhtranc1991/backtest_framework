@@ -29,10 +29,21 @@ def _atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
 
 def _rsi(series: pd.Series, period: int = 14) -> pd.Series:
     delta = series.diff()
-    gain = delta.clip(lower=0).ewm(com=period - 1, adjust=False).mean()
-    loss = (-delta.clip(upper=0)).ewm(com=period - 1, adjust=False).mean()
-    rs = gain / loss.replace(0, np.nan)
-    return 100 - (100 / (1 + rs))
+
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    avg_gain = gain.ewm(alpha=1/period, adjust=False).mean()
+
+    avg_loss = loss.ewm(alpha=1/period, adjust=False).mean()
+
+    rs = avg_gain / avg_loss
+
+    rsi = 100 - (100 / (1 + rs))
+
+    rsi = rsi.where(avg_loss != 0, 100)
+
+    return rsi
 
 
 def _divergence(ind: pd.Series, price: pd.Series, window: int = 14) -> pd.Series:
@@ -145,12 +156,9 @@ def calc_keltner(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
     mid    = _ema(df["Close"], period)
     atr    = _atr(df, period)
     return {
-        "ema_kc":    mid,
-        "upAtr":     mid + mult * atr,
-        "downAtr":   mid - mult * atr,
-        "upper_band": mid + mult * atr,
-        "lower_band": mid - mult * atr,
-        "basis_band": mid,
+        "kc_upper": mid + mult * atr,
+        "kc_lower": mid - mult * atr,
+        "kc_mid": mid,
     }
 
 
@@ -166,19 +174,32 @@ def calc_bollinger(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
     }
 
 
-def calc_williams_fractal(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
-    n = 2
-    high, low = df["High"], df["Low"]
-    bull = pd.Series(False, index=df.index)
-    bear = pd.Series(False, index=df.index)
-    for i in range(n, len(df) - n):
-        if all(low.iloc[i] < low.iloc[i - j] for j in range(1, n + 1)) and \
-           all(low.iloc[i] < low.iloc[i + j] for j in range(1, n + 1)):
-            bull.iloc[i] = True
-        if all(high.iloc[i] > high.iloc[i - j] for j in range(1, n + 1)) and \
-           all(high.iloc[i] > high.iloc[i + j] for j in range(1, n + 1)):
-            bear.iloc[i] = True
-    return {"wf_bull": bull.astype(float), "wf_bear": bear.astype(float)}
+def calc_williams_fractal(
+    df: pd.DataFrame,
+    p: dict,
+) -> Dict[str, pd.Series]:
+
+    high = df["High"]
+    low = df["Low"]
+
+    bull = (
+        (low.shift(2) < low.shift(4))
+        & (low.shift(2) < low.shift(3))
+        & (low.shift(2) < low.shift(1))
+        & (low.shift(2) < low)
+    )
+
+    bear = (
+        (high.shift(2) > high.shift(4))
+        & (high.shift(2) > high.shift(3))
+        & (high.shift(2) > high.shift(1))
+        & (high.shift(2) > high)
+    )
+
+    return {
+        "wf_bull": bull.astype(float),
+        "wf_bear": bear.astype(float),
+    }
 
 
 def calc_pivot_points(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
@@ -202,7 +223,7 @@ def calc_aroon(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
     aroon_down = df["Low"].rolling(period + 1).apply(lambda x: x.argmin())  / period * 100
     return {"aroon_up": aroon_up, "aroon_down": aroon_down}
 
-def parabolic_sar(
+def _parabolic_sar(
     high: pd.Series,
     low: pd.Series,
     acceleration: float = 0.02,
@@ -304,7 +325,7 @@ def parabolic_sar(
     return pd.Series(sar, index=low.index)
 
 def calc_sar(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
-    sar = parabolic_sar(
+    sar = _parabolic_sar(
         high=df["High"],
         low=df["Low"],
         acceleration=p["sar_acceleration"],
@@ -313,64 +334,84 @@ def calc_sar(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
 
     return {"sar": sar}
 
+def calc_supertrend(
+    df: pd.DataFrame,
+    p: dict,
+) -> Dict[str, pd.Series]:
 
-def _simple_sar(high: pd.Series, low: pd.Series, acc: float, max_acc: float) -> pd.Series:
-    """Simplified Parabolic SAR không dùng TA-Lib."""
-    sar = low.copy()
-    ep  = high.copy()
-    af  = acc
-    bull = True
-    for i in range(2, len(sar)):
-        if bull:
-            sar.iloc[i] = sar.iloc[i-1] + af * (ep.iloc[i-1] - sar.iloc[i-1])
-            sar.iloc[i] = min(sar.iloc[i], low.iloc[i-1], low.iloc[i-2])
-            if low.iloc[i] < sar.iloc[i]:
-                bull = False
-                sar.iloc[i] = ep.iloc[i-1]
-                ep.iloc[i]  = low.iloc[i]
-                af = acc
-            else:
-                if high.iloc[i] > ep.iloc[i-1]:
-                    ep.iloc[i] = high.iloc[i]
-                    af = min(af + acc, max_acc)
-        else:
-            sar.iloc[i] = sar.iloc[i-1] + af * (ep.iloc[i-1] - sar.iloc[i-1])
-            sar.iloc[i] = max(sar.iloc[i], high.iloc[i-1], high.iloc[i-2])
-            if high.iloc[i] > sar.iloc[i]:
-                bull = True
-                sar.iloc[i] = ep.iloc[i-1]
-                ep.iloc[i]  = high.iloc[i]
-                af = acc
-            else:
-                if low.iloc[i] < ep.iloc[i-1]:
-                    ep.iloc[i] = low.iloc[i]
-                    af = min(af + acc, max_acc)
-    return sar
+    period = p["supertrend_period"]
+    mult = p["supertrend_mult"]
 
-
-def calc_supertrend(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
-    period, mult = p["supertrend_period"], p["supertrend_mult"]
     atr = _atr(df, period)
-    hl2 = (df["High"] + df["Low"]) / 2
-    upper_raw = hl2 + mult * atr
-    lower_raw = hl2 - mult * atr
 
-    upper = upper_raw.copy()
-    lower = lower_raw.copy()
-    trend = pd.Series(1, index=df.index)
+    hl2 = (
+        df["High"]
+        + df["Low"]
+    ) / 2
+
+    upper_basic = hl2 + mult * atr
+    lower_basic = hl2 - mult * atr
+
+    upper_band = upper_basic.copy()
+    lower_band = lower_basic.copy()
+
+    trend = pd.Series(
+        np.nan,
+        index=df.index,
+    )
+
+    trend.iloc[0] = 1
 
     for i in range(1, len(df)):
-        upper.iloc[i] = upper_raw.iloc[i] if upper_raw.iloc[i] < upper.iloc[i-1] or df["Close"].iloc[i-1] > upper.iloc[i-1] else upper.iloc[i-1]
-        lower.iloc[i] = lower_raw.iloc[i] if lower_raw.iloc[i] > lower.iloc[i-1] or df["Close"].iloc[i-1] < lower.iloc[i-1] else lower.iloc[i-1]
-        if df["Close"].iloc[i] > upper.iloc[i-1]:
-            trend.iloc[i] = 1
-        elif df["Close"].iloc[i] < lower.iloc[i-1]:
-            trend.iloc[i] = -1
-        else:
-            trend.iloc[i] = trend.iloc[i-1]
 
-    supertrend = pd.Series(np.where(trend == 1, lower, upper), index=df.index)
-    return {"up_trend": lower, "down_trend": upper, "super_trend": supertrend}
+        if (
+            upper_basic.iloc[i] < upper_band.iloc[i - 1]
+            or df["Close"].iloc[i - 1]
+            > upper_band.iloc[i - 1]
+        ):
+            upper_band.iloc[i] = upper_basic.iloc[i]
+        else:
+            upper_band.iloc[i] = upper_band.iloc[i - 1]
+
+        if (
+            lower_basic.iloc[i] > lower_band.iloc[i - 1]
+            or df["Close"].iloc[i - 1]
+            < lower_band.iloc[i - 1]
+        ):
+            lower_band.iloc[i] = lower_basic.iloc[i]
+        else:
+            lower_band.iloc[i] = lower_band.iloc[i - 1]
+
+        if (
+            trend.iloc[i - 1] == -1
+            and df["Close"].iloc[i] > upper_band.iloc[i]
+        ):
+            trend.iloc[i] = 1
+
+        elif (
+            trend.iloc[i - 1] == 1
+            and df["Close"].iloc[i] < lower_band.iloc[i]
+        ):
+            trend.iloc[i] = -1
+
+        else:
+            trend.iloc[i] = trend.iloc[i - 1]
+
+    supertrend = pd.Series(
+        np.where(
+            trend == 1,
+            lower_band,
+            upper_band,
+        ),
+        index=df.index,
+    )
+
+    return {
+        "supertrend": supertrend,
+        "st_upper": upper_band,
+        "st_lower": lower_band,
+        "st_direction": trend,
+    }
 
 
 def calc_macd(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
@@ -423,17 +464,59 @@ def calc_mfi(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
 
 
 def calc_adx(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
+    # Wilder-style
+
     period = p["adx_period"]
-    atr = _atr(df, period)
-    up   = df["High"].diff()
-    down = -df["Low"].diff()
-    plus_dm  = up.where((up > down) & (up > 0), 0)
-    minus_dm = down.where((down > up) & (down > 0), 0)
-    plus_di  = 100 * _ema(plus_dm, period)  / (atr + 1e-10)
-    minus_di = 100 * _ema(minus_dm, period) / (atr + 1e-10)
-    dx  = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di + 1e-10)
-    adx = _ema(dx, period)
-    return {"adx": adx, "plus_di": plus_di, "minus_di": minus_di}
+
+    high = df["High"]
+    low = df["Low"]
+    close = df["Close"]
+
+    up_move = high.diff()
+    down_move = -low.diff()
+
+    plus_dm = pd.Series(
+        np.where(
+            (up_move > down_move) & (up_move > 0),
+            up_move,
+            0.0,
+        ),
+        index=df.index,
+    )
+
+    minus_dm = pd.Series(
+        np.where(
+            (down_move > up_move) & (down_move > 0),
+            down_move,
+            0.0,
+        ),
+        index=df.index,
+    )
+
+    tr = pd.concat(
+        [
+            high - low,
+            (high - close.shift()).abs(),
+            (low - close.shift()).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+
+    atr = tr.ewm(alpha=1 / period, adjust=False, ).mean()
+
+    plus_dm_smoothed = plus_dm.ewm(alpha=1 / period, adjust=False, ).mean()
+
+    minus_dm_smoothed = minus_dm.ewm(alpha=1 / period, adjust=False, ).mean()
+
+    plus_di = (100 * plus_dm_smoothed / (atr + 1e-10))
+
+    minus_di = (100 * minus_dm_smoothed / (atr + 1e-10))
+
+    dx = (100 * (plus_di - minus_di).abs() / (plus_di + minus_di + 1e-10))
+
+    adx = dx.ewm(alpha=1 / period, adjust=False, ).mean()
+
+    return {"adx": adx, "plus_di": plus_di, "minus_di": minus_di, }
 
 
 def calc_cci(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
