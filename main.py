@@ -13,9 +13,14 @@ Pipeline:
 import logging
 import sys
 import os
+import warnings
 
 # Thêm root vào sys.path
 sys.path.insert(0, os.path.dirname(__file__))
+
+# Suppress non-critical numerical warnings
+warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*overflow.*')
+warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*invalid value.*')
 
 from utils.logger import setup_logger
 setup_logger("backtest", logging.INFO, "results/run.log")
@@ -110,7 +115,7 @@ def main():
         logger.error("Không tải được dữ liệu. Thoát.")
         return
 
-    logger.info(f"Loaded {len(df_raw)} candles | {df_raw.index[0]} → {df_raw.index[-1]}")
+    logger.info(f"Loaded {len(df_raw)} candles | {df_raw.index[0]} -> {df_raw.index[-1]}")
 
     # ─────────────────────────────────────────
     # 3. TÍNH INDICATOR
@@ -132,7 +137,7 @@ def main():
         return
 
     best = top_strategies[0]
-    logger.info(f"\n🏆 Best strategy:\n{best.strategy}")
+    logger.info(f"\n[BEST STRATEGY]\n{best.strategy}")
     print_metrics_table(best.metrics)
 
     # ─────────────────────────────────────────
@@ -172,7 +177,7 @@ def main():
     # ─────────────────────────────────────────
     # 8. IN TOP-K
     # ─────────────────────────────────────────
-    logger.info("\n📋 Top strategies ranking:")
+    logger.info("\n[TOP STRATEGIES RANKING]")
     print(f"\n{'Rank':<6} {'ID':<8} {'Fitness':>9} {'Sharpe':>8} {'Return%':>9} {'DD%':>8} {'WRate':>7} {'N':>5}")
     print("-" * 65)
     for r in top_strategies:

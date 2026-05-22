@@ -45,7 +45,7 @@ class PerformanceEvaluator:
         cagr = ((final / initial) ** (1 / max(n_years, 1e-6)) - 1) * 100 if initial > 0 else 0
 
         # Risk metrics
-        rets = equity.pct_change().dropna()
+        rets = equity.pct_change(fill_method=None).dropna()
         ann  = np.sqrt(candles_per_year)
         sharpe  = float(rets.mean() / (rets.std() + 1e-10) * ann)
         neg_std = rets[rets < 0].std()

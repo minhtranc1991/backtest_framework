@@ -4,6 +4,7 @@ utils/logger.py — Setup logging chuẩn cho toàn framework.
 
 import logging
 import sys
+import io
 from pathlib import Path
 
 
@@ -19,13 +20,15 @@ def setup_logger(
         datefmt="%Y-%m-%d %H:%M:%S",
     )
     if not logger.handlers:
-        ch = logging.StreamHandler(sys.stdout)
+        # Create UTF-8 wrapper for stdout
+        utf8_stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+        ch = logging.StreamHandler(utf8_stdout)
         ch.setFormatter(fmt)
         logger.addHandler(ch)
 
         if log_file:
             Path(log_file).parent.mkdir(parents=True, exist_ok=True)
-            fh = logging.FileHandler(log_file)
+            fh = logging.FileHandler(log_file, encoding='utf-8')
             fh.setFormatter(fmt)
             logger.addHandler(fh)
 

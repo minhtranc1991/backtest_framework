@@ -79,9 +79,9 @@ def plot_trade_distribution(trades: List[TradeRecord],
 
 
 def print_metrics_table(metrics: dict) -> None:
-    print("\n" + "═" * 45)
+    print("\n" + "=" * 45)
     print(f"  {'PERFORMANCE METRICS':^41}")
-    print("═" * 45)
+    print("=" * 45)
     rows = [
         ("Total Return",     f"{metrics.get('total_return_pct', 0):.2f}%"),
         ("CAGR",             f"{metrics.get('cagr_pct', 0):.2f}%"),
@@ -98,4 +98,4 @@ def print_metrics_table(metrics: dict) -> None:
     ]
     for label, val in rows:
         print(f"  {label:<28} {val:>12}")
-    print("═" * 45 + "\n")
+    print("=" * 45 + "\n")

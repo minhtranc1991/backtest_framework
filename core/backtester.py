@@ -546,7 +546,7 @@ class ExecutionEngine:
 
         total_return  = (equity.iloc[-1] / equity.iloc[0] - 1) * 100 if len(equity) else 0
         n_candles     = len(equity)
-        returns_daily = equity.pct_change().dropna()
+        returns_daily = equity.pct_change(fill_method=None).dropna()
         sharpe = (returns_daily.mean() / (returns_daily.std() + 1e-8)) * np.sqrt(252 * 24) \
                  if len(returns_daily) > 1 else 0
         sortino_neg = returns_daily[returns_daily < 0].std()
