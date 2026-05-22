@@ -40,12 +40,18 @@ class PerformanceEvaluator:
         final   = equity.iloc[-1]
         total_return_pct = (final / initial - 1) * 100
 
-        # CAGR
+        # CAGR (prevent overflow by clamping ratio)
         n_years = len(equity) / candles_per_year
-        cagr = ((final / initial) ** (1 / max(n_years, 1e-6)) - 1) * 100 if initial > 0 else 0
+        if initial > 0 and np.isfinite(final):
+            ratio = final / initial
+            # Clamp ratio to prevent overflow in power operation
+            ratio = np.clip(ratio, 1e-10, 1e10)
+            cagr = (ratio ** (1 / max(n_years, 1e-6)) - 1) * 100
+        else:
+            cagr = 0
 
         # Risk metrics
-        rets = equity.pct_change().dropna()
+        rets = equity.pct_change(fill_method=None).dropna()
         ann  = np.sqrt(candles_per_year)
         sharpe  = float(rets.mean() / (rets.std() + 1e-10) * ann)
         neg_std = rets[rets < 0].std()

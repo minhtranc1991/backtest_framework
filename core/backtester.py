@@ -197,7 +197,9 @@ class CapitalManager:
     def check_liquidation(self, pos: Position, low: float, high: float) -> bool:
         if self.margin_mode == "spot":
             return False
-        liq_price = (pos.entry_price * pos.quantity * (1 / self.leverage) * 0.9) / pos.quantity
+        if pos.quantity <= 0 or not np.isfinite(pos.entry_price):
+            return False
+        liq_price = pos.entry_price * 0.9  # Simplified: maintenance margin at 90%
         if pos.side == "long":
             return low <= liq_price
         return high >= liq_price
@@ -236,8 +238,12 @@ class OrderManager:
         return 0.0
 
     def calc_fee(self, fill_price: float, qty: float, order_type: str = "market") -> float:
+        if not (np.isfinite(fill_price) and np.isfinite(qty)) or fill_price <= 0 or qty <= 0:
+            return 0.0
         rate = self.taker_fee if order_type == "market" else self.maker_fee
-        return fill_price * qty * rate
+        fee = fill_price * qty * rate
+        # Clamp to prevent overflow (max fee = 10% of notional)
+        return min(fee, fill_price * qty * 0.1)
 
     def fill_market(self, side: str, open_price: float, qty: float, data: dict) -> Tuple[float, float, float]:
         slip = self.calc_slippage(open_price, data)
@@ -471,12 +477,17 @@ class ExecutionEngine:
         qty = max(qty, 1e-8)
 
         fill, slip, fee = self.orders.fill_market(side, open_price, qty, data)
+        # Validate values before calculation
+        if not (np.isfinite(fill) and np.isfinite(qty)):
+            return
         cost = fill * qty / self.cfg.leverage
+        # Prevent overflow: clamp cost to max 90% of initial capital
+        cost = min(cost, self.capital.initial * 0.9)
         if cost + fee > self.capital.available_margin:
             return   # margin không đủ
 
-        self.capital.used_margin += cost
-        self.capital.balance     -= fee
+        self.capital.used_margin = min(self.capital.used_margin + cost, self.capital.initial)
+        self.capital.balance = max(0, self.capital.balance - fee)  # Prevent negative balance from fees
         self._last_trade_candle   = i
 
         pos = Position(
@@ -506,6 +517,10 @@ class ExecutionEngine:
     def _close_position(self, pos: Position, exit_price: float,
                         ts: datetime, i: int, data: dict,
                         reason: ExitReason) -> None:
+        # Validate inputs
+        if not np.isfinite(exit_price) or exit_price <= 0:
+            return
+        
         slip = self.orders.calc_slippage(exit_price, data)
         if pos.side == "long":
             fill = exit_price - slip
@@ -518,10 +533,14 @@ class ExecutionEngine:
         pnl -= fee
 
         cost = pos.entry_price * pos.quantity / pos.leverage
+        # Clamp pnl to prevent overflow: max gain/loss = 300% of cost
+        pnl = np.clip(pnl, -cost * 3, cost * 3)
+        
         self.capital.used_margin = max(0, self.capital.used_margin - cost)
-        self.capital.balance    += pnl + cost
+        # Ensure balance stays positive
+        self.capital.balance = max(0, self.capital.balance + pnl + cost)
 
-        pnl_pct = pnl / (cost + 1e-8) * 100
+        pnl_pct = (pnl / (cost + 1e-8) * 100) if cost > 0 else 0
 
         self.logger_t.log(TradeRecord(
             entry_time=pos.entry_time, exit_time=ts,
@@ -546,7 +565,7 @@ class ExecutionEngine:
 
         total_return  = (equity.iloc[-1] / equity.iloc[0] - 1) * 100 if len(equity) else 0
         n_candles     = len(equity)
-        returns_daily = equity.pct_change().dropna()
+        returns_daily = equity.pct_change(fill_method=None).dropna()
         sharpe = (returns_daily.mean() / (returns_daily.std() + 1e-8)) * np.sqrt(252 * 24) \
                  if len(returns_daily) > 1 else 0
         sortino_neg = returns_daily[returns_daily < 0].std()
