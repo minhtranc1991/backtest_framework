@@ -17,6 +17,12 @@ import warnings
 import numpy as np
 import pandas as pd
 
+pd.set_option("display.max_rows", None)
+pd.set_option("display.max_columns", None)
+pd.set_option("display.width", None)
+pd.set_option("display.max_colwidth", None)
+pd.set_option("display.expand_frame_repr", False)
+
 # Thêm root vào sys.path
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -128,6 +134,8 @@ def main():
     ind_builder = IndicatorBuilder()
     df_feat = ind_builder.build(df_raw)
     logger.info(f"Feature DataFrame: {df_feat.shape[1]} columns")
+    logger.info(f"Sample features head:\n{df_feat.head(50)}")
+    logger.info(f"Sample features tail:\n{df_feat.tail(50)}")
 
     # ─────────────────────────────────────────
     # 4. OPTIMIZE STRATEGY
