@@ -202,17 +202,115 @@ def calc_aroon(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
     aroon_down = df["Low"].rolling(period + 1).apply(lambda x: x.argmin())  / period * 100
     return {"aroon_up": aroon_up, "aroon_down": aroon_down}
 
+def parabolic_sar(
+    high: pd.Series,
+    low: pd.Series,
+    acceleration: float = 0.02,
+    maximum: float = 0.2,
+) -> pd.Series:
+    """
+    Parabolic SAR implementation without TA-Lib.
+
+    Parameters
+    ----------
+    high : pd.Series
+    low : pd.Series
+    acceleration : float
+        Initial acceleration factor (AF)
+    maximum : float
+        Maximum acceleration factor
+
+    Returns
+    -------
+    pd.Series
+        SAR values
+    """
+
+    high_np = high.to_numpy(dtype=float)
+    low_np = low.to_numpy(dtype=float)
+
+    n = len(high_np)
+    sar = np.full(n, np.nan)
+
+    if n < 2:
+        return pd.Series(sar, index=range(n))
+
+    # Initial trend
+    long_position = high_np[1] > high_np[0]
+
+    if long_position:
+        sar[1] = low_np[0]
+        ep = high_np[1]  # Extreme Point
+    else:
+        sar[1] = high_np[0]
+        ep = low_np[1]
+
+    af = acceleration
+
+    for i in range(2, n):
+
+        prev_sar = sar[i - 1]
+
+        if long_position:
+
+            current_sar = prev_sar + af * (ep - prev_sar)
+
+            # SAR cannot exceed previous 2 lows
+            current_sar = min(
+                current_sar,
+                low_np[i - 1],
+                low_np[i - 2]
+            )
+
+            # Reversal?
+            if low_np[i] < current_sar:
+                long_position = False
+                current_sar = ep
+
+                ep = low_np[i]
+                af = acceleration
+
+            else:
+                if high_np[i] > ep:
+                    ep = high_np[i]
+                    af = min(af + acceleration, maximum)
+
+        else:
+
+            current_sar = prev_sar + af * (ep - prev_sar)
+
+            # SAR cannot be below previous 2 highs
+            current_sar = max(
+                current_sar,
+                high_np[i - 1],
+                high_np[i - 2]
+            )
+
+            # Reversal?
+            if high_np[i] > current_sar:
+                long_position = True
+                current_sar = ep
+
+                ep = high_np[i]
+                af = acceleration
+
+            else:
+                if low_np[i] < ep:
+                    ep = low_np[i]
+                    af = min(af + acceleration, maximum)
+
+        sar[i] = current_sar
+
+    return pd.Series(sar, index=low.index)
 
 def calc_sar(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
-    try:
-        import talib
-        sar = talib.SAR(df["High"], df["Low"],
-                        acceleration=p["sar_acceleration"],
-                        maximum=p["sar_max_acceleration"])
-    except ImportError:
-        # Fallback: simplified SAR
-        sar = _simple_sar(df["High"], df["Low"],
-                          p["sar_acceleration"], p["sar_max_acceleration"])
+    sar = parabolic_sar(
+        high=df["High"],
+        low=df["Low"],
+        acceleration=p["sar_acceleration"],
+        maximum=p["sar_max_acceleration"],
+    )
+
     return {"sar": sar}
 
 
