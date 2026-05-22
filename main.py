@@ -14,28 +14,31 @@ import logging
 import sys
 import os
 import warnings
+import numpy as np
+import pandas as pd
 
 # Thêm root vào sys.path
 sys.path.insert(0, os.path.dirname(__file__))
 
 # Suppress non-critical numerical warnings
-warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*overflow.*')
-warnings.filterwarnings('ignore', category=RuntimeWarning, message='.*invalid value.*')
+# warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*overflow.*")
+# warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*invalid value.*")
+# warnings.filterwarnings("ignore", category=FutureWarning, message=".*pct_change.*fill_method.*")
 
-from utils.logger import setup_logger
-setup_logger("backtest", logging.INFO, "results/run.log")
+from utils.paths         import create_run_dir
+run_dir = create_run_dir()
+log_file = run_dir / "run.log"
+from utils.logger import setup_logger, log_dataframe_info
+logger = setup_logger(log_file=str(log_file))
 
-import pandas as pd
-from config.config import (
-    DataConfig, BacktestConfig, SignalConfig, OptimizerConfig
-)
-from core.data_loader    import DataLoader
+from config.config          import DataConfig, BacktestConfig, SignalConfig, OptimizerConfig
+from core.data_loader       import DataLoader
 from core.indicator_builder import IndicatorBuilder
 from core.signal_generator  import SignalGenerator
-from core.backtester     import ExecutionEngine, ATRStop, RiskBasedSizing
-from core.evaluation     import PerformanceEvaluator, WalkForwardValidator
-from core.optimizer      import Optimizer
-from utils.plotting      import plot_equity_curve, print_metrics_table
+from core.backtester        import ExecutionEngine, ATRStop, RiskBasedSizing
+from core.evaluation        import PerformanceEvaluator, WalkForwardValidator
+from core.optimizer         import Optimizer
+from utils.plotting         import plot_equity_curve, print_metrics_table
 
 logger = logging.getLogger("backtest")
 os.makedirs("results", exist_ok=True)
@@ -45,6 +48,7 @@ def main():
     # ─────────────────────────────────────────
     # 1. CẤU HÌNH
     # ─────────────────────────────────────────
+    
     data_cfg = DataConfig(
         symbol="BTCUSDT",
         interval="1h",
@@ -116,7 +120,7 @@ def main():
         return
 
     logger.info(f"Loaded {len(df_raw)} candles | {df_raw.index[0]} -> {df_raw.index[-1]}")
-
+    log_dataframe_info(logger, df_raw, name=f"Raw Data [{data_cfg.symbol} {data_cfg.interval}]")
     # ─────────────────────────────────────────
     # 3. TÍNH INDICATOR
     # ─────────────────────────────────────────
@@ -172,7 +176,7 @@ def main():
     # 7. PLOT
     # ─────────────────────────────────────────
     plot_equity_curve(result, title=f"Best Strategy [{best.strategy.strategy_id}]",
-                      save_path="results/equity_curve.png")
+                      save_path="equity_curve.png")
 
     # ─────────────────────────────────────────
     # 8. IN TOP-K

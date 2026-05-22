@@ -5,6 +5,7 @@ utils/logger.py — Setup logging chuẩn cho toàn framework.
 import logging
 import sys
 import io
+import pandas as pd
 from pathlib import Path
 
 
@@ -33,3 +34,47 @@ def setup_logger(
             logger.addHandler(fh)
 
     return logger
+
+def log_dataframe_info(
+    logger: logging.Logger,
+    df: pd.DataFrame,
+    name: str = "Data",
+) -> None:
+    """
+    Log basic dataframe quality statistics.
+    """
+
+    if df.empty:
+        logger.warning(f"{name}: DataFrame is empty")
+        return
+
+    logger.info(
+        f"{name}: shape={df.shape} "
+        f"range=[{df.index.min()} -> {df.index.max()}]"
+    )
+
+    missing = int(df.isna().sum().sum())
+    duplicates = int(df.index.duplicated().sum())
+
+    logger.info(
+        f"{name}: missing={missing:,} "
+        f"duplicate_index={duplicates:,}"
+    )
+
+    if {"open", "high", "low", "close"}.issubset(df.columns):
+        bad_hl = int((df["high"] < df["low"]).sum())
+
+        logger.info(
+            f"{name}: "
+            f"close=[{df['close'].min():.4f}, {df['close'].max():.4f}] "
+            f"bad_high_low={bad_hl}"
+        )
+
+    if "volume" in df.columns:
+        zero_vol = int((df["volume"] == 0).sum())
+
+        logger.info(
+            f"{name}: "
+            f"volume_mean={df['volume'].mean():,.2f} "
+            f"zero_volume={zero_vol:,}"
+        )
