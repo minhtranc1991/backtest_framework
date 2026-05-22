@@ -176,7 +176,7 @@ def main():
     # 7. PLOT
     # ─────────────────────────────────────────
     plot_equity_curve(result, title=f"Best Strategy [{best.strategy.strategy_id}]",
-                      save_path="equity_curve.png")
+                      save_path=run_dir / "equity_curve.png")
 
     # ─────────────────────────────────────────
     # 8. IN TOP-K

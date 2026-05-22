@@ -12,8 +12,8 @@ from typing import Literal, Optional, List
 # ─────────────────────────────────────────────
 INDICATOR_REGISTRY = {
     # Price
-    "high": True, "low": True, "open": True, "close": True,
-    "volume": True, "delta_price": True, "percent_price_tl": True,
+    "delta_price": True, 
+    "percent_price_tl": True,
 
     # Volume-based
     "vma": True, "vwma": True, "vo": True, "vwap": True,
@@ -32,7 +32,7 @@ INDICATOR_REGISTRY = {
 
     # Oscillators
     "macd": True, "stoch": True, "rsi": True,
-    "atr": True, "mfi": True, "stoch_fast": True,
+    "atr": True, "mfi": True, 
     "rsi_sma": True, "atr_sma": True, "mfi_sma": True,
     "adx": True, "cci": True,
     "rsi_divergence": True, "atr_divergence": True, "mfi_divergence": True,

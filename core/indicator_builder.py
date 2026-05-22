@@ -300,7 +300,7 @@ def calc_rsi(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
     rsi = _rsi(df["Close"], p["rsi_period"])
     rsi_sma = rsi.rolling(p["rsi_period"]).mean()
     div = _divergence(rsi, df["Close"])
-    return {"rsi": rsi, "rsi_sma_line": rsi_sma, "rsi_divergence": div}
+    return {"rsi": rsi, "rsi_sma": rsi_sma, "rsi_divergence": div}
 
 
 def calc_atr_ind(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
@@ -308,7 +308,7 @@ def calc_atr_ind(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
     atr = _atr(df, period)
     atr_sma = atr.rolling(period).mean()
     div = _divergence(atr, df["Close"])
-    return {"atr": atr, "atr_sma_line": atr_sma, "atr_divergence": div}
+    return {"atr": atr, "atr_sma": atr_sma, "atr_divergence": div}
 
 
 def calc_mfi(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
@@ -321,7 +321,7 @@ def calc_mfi(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
     mfi = 100 - (100 / (1 + mfr))
     mfi_sma = mfi.rolling(period).mean()
     div = _divergence(mfi, df["Close"])
-    return {"mfi": mfi, "mfi_sma_line": mfi_sma, "mfi_divergence": div}
+    return {"mfi": mfi, "mfi_sma": mfi_sma, "mfi_divergence": div}
 
 
 def calc_adx(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
@@ -352,11 +352,15 @@ def calc_cci(df: pd.DataFrame, p: dict) -> Dict[str, pd.Series]:
 # ─────────────────────────────────────────────
 CALC_MAP = {
     "delta_price":       calc_price_features,
+    "percent_price_tl":  calc_price_features,
     "vma":               calc_vma,
     "vwma":              calc_vwma,
     "vo":                calc_vo,
     "vwap":              calc_vwap,
+    "upper_vwap":        calc_vwap,
+    "lower_vwap":        calc_vwap,
     "cvd":               calc_cvd,
+    "delta_cvd":         calc_cvd,
     "ma":                calc_ma,
     "ema":               calc_ema,
     "ichimoku":          calc_ichimoku,
@@ -370,8 +374,14 @@ CALC_MAP = {
     "macd":              calc_macd,
     "stoch":             calc_stoch,
     "rsi":               calc_rsi,
+    "rsi_sma":           calc_rsi,
+    "rsi_divergence":    calc_rsi,
     "atr":               calc_atr_ind,
+    "atr_sma":           calc_atr_ind,
+    "atr_divergence":    calc_atr_ind,
     "mfi":               calc_mfi,
+    "mfi_sma":           calc_mfi,
+    "mfi_divergence":    calc_mfi,
     "adx":               calc_adx,
     "cci":               calc_cci,
 }
@@ -395,23 +405,119 @@ class IndicatorBuilder:
         self.params   = params   or INDICATOR_PARAMS
 
     def build(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Trả về DataFrame gốc + toàn bộ indicator đã tính."""
+        """
+        Build all enabled indicators.
+
+        Returns
+        -------
+        pd.DataFrame
+            Original dataframe + generated indicators.
+        """
+
         result = df.copy()
-        computed: set = set(result.columns)
+        computed: set[str] = set(result.columns)
+
+        created_cols = 0
+        failed_indicators = []
+
+        logger.info("=" * 60)
+        logger.info("Building indicators...")
+        logger.info(f"Input shape: {result.shape}")
 
         for name, enabled in self.registry.items():
+
             if not enabled:
                 continue
-            if name not in CALC_MAP:
-                continue
-            try:
-                new_cols = CALC_MAP[name](result, self.params)
-                for col, series in new_cols.items():
-                    if col not in computed:
-                        result[col] = series
-                        computed.add(col)
-            except Exception as e:
-                logger.warning(f"Indicator [{name}] failed: {e}")
 
-        logger.info(f"✅ Built {len(result.columns) - len(df.columns)} indicator columns.")
+            if name not in CALC_MAP:
+                logger.warning(
+                    f"Indicator [{name}] not found in CALC_MAP"
+                )
+                continue
+
+            logger.info(f"→ Building [{name}]")
+
+            try:
+
+                before_cols = len(result.columns)
+
+                new_cols = CALC_MAP[name](
+                    result,
+                    self.params,
+                )
+
+                if not new_cols:
+                    logger.warning(
+                        f"[{name}] returned empty result"
+                    )
+                    continue
+
+                added = []
+
+                for col, series in new_cols.items():
+
+                    if col in computed:
+                        logger.debug(
+                            f"[{name}] skipped existing column: {col}"
+                        )
+                        continue
+
+                    result[col] = series
+                    computed.add(col)
+                    added.append(col)
+
+                after_cols = len(result.columns)
+                n_added = after_cols - before_cols
+
+                created_cols += n_added
+
+                # NaN diagnostics
+                nan_info = []
+
+                for col in added:
+
+                    nan_pct = (
+                        result[col].isna().mean() * 100
+                    )
+
+                    if nan_pct > 0:
+                        nan_info.append(
+                            f"{col}={nan_pct:.1f}%"
+                        )
+
+                logger.info(
+                    f"✓ [{name}] "
+                    f"added={n_added} columns"
+                )
+
+                if nan_info:
+                    logger.debug(
+                        f"[{name}] NaN: "
+                        + ", ".join(nan_info)
+                    )
+
+            except Exception:
+
+                failed_indicators.append(name)
+
+                logger.exception(
+                    f"✗ Indicator [{name}] failed"
+                )
+
+        logger.info("=" * 60)
+        logger.info(
+            f"Indicator build completed | "
+            f"new_columns={created_cols} | "
+            f"total_columns={len(result.columns)} | "
+            f"failed={len(failed_indicators)}"
+        )
+
+        if failed_indicators:
+            logger.warning(
+                f"Failed indicators: "
+                f"{failed_indicators}"
+            )
+
+        logger.info("=" * 60)
+
         return result
