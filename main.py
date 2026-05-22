@@ -17,6 +17,12 @@ import warnings
 import numpy as np
 import pandas as pd
 
+pd.set_option("display.max_rows", None)
+pd.set_option("display.max_columns", None)
+pd.set_option("display.width", None)
+pd.set_option("display.max_colwidth", None)
+pd.set_option("display.expand_frame_repr", False)
+
 # Thêm root vào sys.path
 sys.path.insert(0, os.path.dirname(__file__))
 
